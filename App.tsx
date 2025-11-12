@@ -1,47 +1,32 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import type { Prompt } from './types';
 import SearchInput from './components/SearchInput';
 import PromptList from './components/PromptList';
 import FloatingActionButton from './components/FloatingActionButton';
 import PromptModal from './components/PromptModal';
 import Toast from './components/Toast';
+import { supabase } from './supabaseClient';
 
-// Mock Data
-const INITIAL_PROMPTS: Prompt[] = [
-  {
-    id: 'p1',
-    title: '8K Sci-Fi Warrior',
-    prompt: 'A female cyborg warrior in a futuristic city, intricate details, hyperrealistic, 8k, cinematic lighting, style of Blade Runner 2049',
-  },
-  {
-    id: 'p2',
-    title: 'Explain Quantum Computing',
-    prompt: 'Explain quantum computing in simple terms, using an analogy that a high school student can understand. Cover superposition and entanglement.',
-  },
-  {
-    id: 'p3',
-    title: 'Surrealist Painting',
-    prompt: 'A surrealist painting of a clock melting over a tree branch in a desert landscape, with a giant floating eye in the sky. Style of Salvador Dali.',
-  },
-  {
-    id: 'p4',
-    title: 'Weekly Meal Plan',
-    prompt: 'Create a healthy and balanced 7-day meal plan for a busy professional. Include breakfast, lunch, and dinner. Focus on quick and easy recipes.',
-  },
-  {
-    id: 'p5',
-    title: 'Isometric Game Asset',
-    prompt: 'An isometric view of a small, cozy potion shop, pixel art style, vibrant colors, magical glow from windows, detailed interior visible.',
-  }
-];
 
 const App: React.FC = () => {
-  const [prompts, setPrompts] = useState<Prompt[]>(INITIAL_PROMPTS);
+  const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchPrompts = async () => {
+      const { data, error } = await supabase.from('prompts').select('*');
+      if (error) {
+        console.error('Error fetching prompts:', error);
+      } else {
+        setPrompts(data || []);
+      }
+    };
+    fetchPrompts();
+  }, []);
 
   const filteredPrompts = useMemo(() => {
     return prompts.filter(prompt => {
@@ -70,24 +55,39 @@ const App: React.FC = () => {
     setEditingPrompt(null);
   };
 
-  const handleSavePrompt = (promptToSave: Omit<Prompt, 'id'> & { id?: string }) => {
+  const handleSavePrompt = async (promptToSave: Omit<Prompt, 'id'> & { id?: string }) => {
     if (promptToSave.id) {
-      setPrompts(prompts.map(p => p.id === promptToSave.id ? { ...p, ...promptToSave } as Prompt : p));
-      showToast('Prompt updated successfully!');
+      const { error } = await supabase.from('prompts').update(promptToSave).eq('id', promptToSave.id);
+      if (error) {
+        console.error('Error updating prompt:', error);
+        showToast('Error updating prompt');
+      } else {
+        setPrompts(prompts.map(p => p.id === promptToSave.id ? { ...p, ...promptToSave } as Prompt : p));
+        showToast('Prompt updated successfully!');
+      }
     } else {
-      const newPrompt: Prompt = {
-        ...promptToSave,
-        id: `p${Date.now()}`
-      };
-      setPrompts([newPrompt, ...prompts]);
-      showToast('Prompt added successfully!');
+      const { title, prompt } = promptToSave;
+      const { data, error } = await supabase.from('prompts').insert([{ title, prompt }]).select();
+      if (error) {
+        console.error('Error adding prompt:', error);
+        showToast('Error adding prompt');
+      } else {
+        setPrompts([data[0], ...prompts]);
+        showToast('Prompt added successfully!');
+      }
     }
     handleCloseModal();
   };
   
-  const handleDelete = (id: string) => {
-    setPrompts(prompts.filter(p => p.id !== id));
-    showToast('Prompt deleted.');
+  const handleDelete = async (id: string) => {
+    const { error } = await supabase.from('prompts').delete().eq('id', id);
+    if (error) {
+      console.error('Error deleting prompt:', error);
+      showToast('Error deleting prompt');
+    } else {
+      setPrompts(prompts.filter(p => p.id !== id));
+      showToast('Prompt deleted.');
+    }
   };
 
   return (
